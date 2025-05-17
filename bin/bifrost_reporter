@@ -1,19 +1,15 @@
 #!/usr/bin/env python
 
-from bifrost_reporter.data_processing import get_config
-from bifrost_reporter.data_collection import (
-    retrieve_samples,
-    check_samples,
-    data_collection_from_dict,
-    extract_prefix)
+from bifrost_reporter.data_processing import *
+from bifrost_reporter.data_collection import *
 import argparse
 import logging
 import yaml
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-pd.set_option('display.max_rows', 1000)  # Show more rows when displaying DataFrames
-pd.set_option('display.max_colwidth', None)  # Don't truncate column contents
+# pd.set_option('display.max_rows', 1000)  # Show more rows when displaying DataFrames
+# pd.set_option('display.max_colwidth', None)  # Don't truncate column contents
 
 
 
@@ -66,49 +62,71 @@ if __name__ == '__main__':
     # Load environment config
     config = get_config(args.config)
 
+    # Load Thor Analysis
+    HINF_df = pd.read_excel(config["hinf_mgk"]["path"], sheet_name = "HINF")
+    MGK_df = pd.read_excel(config["hinf_mgk"]["path"],sheet_name="MGK")
+
     try:
+        print("ILLUMINA")
+        print("-----------------------------------------------------")
         # Retrieve sample paths from config
-        new_illumina_paths = retrieve_samples(config["Illumina"]["new"])
+        # new_illumina_paths = retrieve_samples(config["Illumina"]["new"])
         original_illumina_paths = retrieve_samples(config["Illumina"]["original"])
+        
+        # # Check for expected files in sample directories
+        # new_illumina = check_samples(new_illumina_paths,mode="illumina")
+        original_data = check_samples(original_illumina_paths,mode="illumina") 
 
-        # Check for expected files in sample directories
-        new_illumina = check_samples(new_illumina_paths)
-        original_data = check_samples(original_illumina_paths)
+        # # Collect parsed data
+        #l_new = data_collection_from_dict(new_illumina,mode="illumina")
+        l_og = data_collection_from_dict(original_data,mode="illumina")
+        print(l_og)
 
-        # Collect parsed data
-        l_new = data_collection_from_dict(new_illumina)
-        l_og = data_collection_from_dict(original_data)
+        
+        print("NANOPORE")
+        print("-----------------------------------------------------")
+        #new_nanopore_paths = retrieve_samples(config["Nanopore"]["new"])
+        #print(new_nanopore_paths)
+        # new_nanopore = check_samples(new_nanopore_paths,mode="nanopore")
+        #print(new_nanopore)
+        # l_new = data_collection_from_dict(new_nanopore,mode="nanopore")
+        
+        # ori_nanopore_paths = retrieve_samples(config["Nanopore"]["original"])
+        
+        # ori_nanopore = check_samples(ori_nanopore_paths,mode="nanopore")
+        # l_ori = data_collection_from_dict(ori_nanopore,mode="nanopore")
+        # print(l_ori)
 
     except Exception as e:
         logging.error(f"Failed to retrieve or check Illumina sample data: {str(e)}")
-        raise SystemExit(f"Error loading sample paths or data collection failed: {e}")
+        #raise SystemExit(f"Error loading sample paths or data collection failed: {e}")
 
 
-    # Organize new results by prefix
-    l_dict_dfs = []
-    for df in l_new:
-        try:
-            df["Prefix"] = df.index.to_series().apply(extract_prefix)
-            dict_dfs = {prefix: sub_df.drop(columns=["Prefix"]) for prefix, sub_df in df.groupby("Prefix")}
-            l_dict_dfs.append(dict_dfs)
-        except:
-            continue
+    # # Organize new results by prefix
+    # l_dict_dfs = []
+    # for df in l_new:
+    #     try:
+    #         df["Prefix"] = df.index.to_series().apply(extract_prefix)
+    #         dict_dfs = {prefix: sub_df.drop(columns=["Prefix"]) for prefix, sub_df in df.groupby("Prefix")}
+    #         l_dict_dfs.append(dict_dfs)
+    #     except:
+    #         continue
 
-    # Merge new and original results by prefix
-    mlst_dict = {key: pd.concat([df, l_og[0]]) for key, df in l_dict_dfs[0].items()}
+    # # Merge new and original results by prefix
+    # mlst_dict = {key: pd.concat([df, l_og[0]]) for key, df in l_dict_dfs[0].items()}
 
-    plasmid_finder = {key: pd.concat([df, l_og[1]]) for key, df in l_dict_dfs[1].items()}
-
-    resfinder = {key: pd.concat([df, l_og[2]]) for key, df in l_dict_dfs[2].items()}
+    # plasmid_finder = {key: pd.concat([df, l_og[1]]) for key, df in l_dict_dfs[1].items()}
     
-    virulence_finder = {key: pd.concat([df, l_og[3]]) for key, df in l_dict_dfs[3].items()}
+    # resfinder = {key: pd.concat([df, l_og[2]]) for key, df in l_dict_dfs[2].items()}
+    
+    # virulence_finder = {key: pd.concat([df, l_og[3]]) for key, df in l_dict_dfs[3].items()}
  
-    assemblatron = {key: pd.concat([df, l_og[4]]) for key, df in l_dict_dfs[4].items()}
+    # assemblatron = {key: pd.concat([df, l_og[4]]) for key, df in l_dict_dfs[4].items()}
+    # print(assemblatron)
+    # kma = {key: pd.concat([df, l_og[5]]) for key, df in l_dict_dfs[5].items()}
 
-    kma = {key: pd.concat([df, l_og[5]]) for key, df in l_dict_dfs[5].items()}
+    # amr_plus = {key: pd.concat([df, l_og[6]]) for key, df in l_dict_dfs[6].items()}
 
-    amr_plus = {key: pd.concat([df, l_og[6]]) for key, df in l_dict_dfs[6].items()}
+    # ssi_stamper = {key: pd.concat([df, l_og[7]]) for key, df in l_dict_dfs[7].items()}
 
-    ssi_stamper = {key: pd.concat([df, l_og[7]]) for key, df in l_dict_dfs[7].items()}
-
-    res_lab_stamper = {key: pd.concat([df, l_og[8]]) for key, df in l_dict_dfs[8].items()}
+    # res_lab_stamper = {key: pd.concat([df, l_og[8]]) for key, df in l_dict_dfs[8].items()}

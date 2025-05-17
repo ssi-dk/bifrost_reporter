@@ -10,8 +10,9 @@ import numpy as np
 import warnings
 import os
 import envyaml
-
-
+import re
+pd.options.display.max_columns = None
+pd.options.display.max_rows = None
 # This script includes helper functions to parse and normalize various YAML outputs
 # from a bioinformatics pipeline such as Bifrost. These include:
 # - MLST (Multi-Locus Sequence Typing)
@@ -77,6 +78,21 @@ def get_config(config_path: str = None):
         raise RuntimeError(f"Failed to load config file: {config_path}. Error: {str(e)}")
 
 
+def extract_prefix(sample_name):
+    """
+    Extracts the first three underscore-separated components from a sample name.
+
+    Parameters:
+    ----------
+    sample_name : str
+
+    Returns:
+    -------
+    str
+        Prefix composed of first 3 elements (e.g., "HER_BTP_WGS")
+    """
+    return "_".join(sample_name.split("_")[:3])
+
 
 # ----------------------
 # CUSTOM YAML HANDLERS
@@ -104,19 +120,21 @@ def parse_mlst(list_files):
     """
     d = {}
     for file in list_files:
+        sample_id = os.path.splitext(os.path.basename(file))[0].split("__")[0]
         with open(file) as f:
             temp = yaml.load(f, Loader=yaml.Loader)
             if temp["status"] == "Success":
-                d[temp["sample"]["name"]] = temp["summary"]["mlst_report"]
+                d[sample_id] = temp["summary"]["mlst_report"]
             else:
-                d[temp["sample"]["name"]] = "N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A"
+                d[sample_id] = "N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A"
 
     # Split CSV-like MLST reports into list of 8 values (ST + 7 loci)
     for key, value in d.items():
         d[key] = value.split(',')
-
+    
     df = pd.DataFrame.from_dict(d, orient='index', dtype=str)
     df.columns = range(df.shape[1])
+    
     return df
 
 
@@ -128,15 +146,16 @@ def parse_kmapointmutations(list_files):
     """
     d = {}
     for file in list_files:
+        sample_id = os.path.splitext(os.path.basename(file))[0].split("__")[0]
         with open(file) as f:
             data = yaml.load(f, Loader=yaml.Loader)
             if data["status"] == "Success":
                 summary = data.get("results", {}).get("pointmutations_tsv", {}).get("values", [])
                 if not summary:
-                    warnings.warn(f"Missing pointmutation summary for: {data['sample']['name']}")
+                    warnings.warn(f"Missing pointmutation summary for: {sample_id}")
                     continue
                 df = pd.DataFrame.from_dict(summary)
-                d[data["sample"]["name"]] = df
+                d[sample_id] = df
     if d:
         df = pd.concat(d, names=['Sample Name']).reset_index(level=0)
         df = df.set_index("Sample Name").drop(columns=["#Sample"])
@@ -153,14 +172,15 @@ def check_stampers(list_files):
     """
     d = {}
     for file in list_files:
+        sample_id = os.path.splitext(os.path.basename(file))[0].split("__")[0]
         with open(file) as f:
             data = yaml.load(f, Loader=yaml.Loader)
             if data["status"] == "Success":
                 summary = data.get("results", {})
                 df = pd.DataFrame.from_dict(summary)
-                d[data["sample"]["name"]] = "Pass" if df["status"].eq("pass").all() else "Fail"
+                d[sample_id] = "Pass" if df["status"].eq("pass").all() else "Fail"
             else:
-                d[data["sample"]["name"]] = "Requirement Not Met"
+                d[sample_id] = "Requirement Not Met"
     return pd.DataFrame.from_dict(d, orient='index')
 
 
@@ -172,6 +192,7 @@ def parse_amrfinder(list_files):
     """
     d = {}
     for file in list_files:
+        sample_id = os.path.splitext(os.path.basename(file))[0].split("__")[0]
         with open(file) as f:
             data = yaml.load(f, Loader=yaml.Loader)
             if data["status"] == "Success":
@@ -185,7 +206,7 @@ def parse_amrfinder(list_files):
                     'Method', 'Name of closest sequence', 'Protein identifier',
                     'Reference sequence length', 'Scope', 'Sequence name', 'Start', 'Stop',
                     'Strand', 'Subclass', 'Target length'])
-            d[data["sample"]["name"]] = df
+            d[sample_id] = df
     df = pd.concat(d, names=['Sample Name']).reset_index(level=0).set_index("Sample Name")
     return df
 
@@ -198,11 +219,12 @@ def parse_species(list_files):
     """
     d = {}
     for file in list_files:
+        sample_id = os.path.splitext(os.path.basename(file))[0].split("__")[0]
         with open(file) as f:
             data = yaml.load(f, Loader=yaml.Loader)
             if data["status"] == "Success":
                 summary = data.get("summary", {})
-                d[data["sample"]["name"]] = summary
+                d[sample_id] = summary
     df = pd.DataFrame.from_dict(d, orient='index')
     df['sum_unclassified_species1'] = df['percent_unclassified'] + df['percent_classified_species_1']
     return df[[
@@ -241,9 +263,10 @@ def parse_finder_tools(list_files, ariba_type):
         return extracted_data
 
     for file in list_files:
+        sample_id = os.path.splitext(os.path.basename(file))[0].split("__")[0]
         with open(file) as f:
             data = yaml.load(f, Loader=yaml.Loader)
-            sample_name = data["sample"]["name"]
+            sample_name = sample_id
             if data.get("status") == "Success":
                 info = data["summary"].get(ariba_type, [])
                 data_df[sample_name] = extract_data(info)
@@ -274,10 +297,11 @@ def parse_assemblatron(list_files):
     """
     d = {}
     for file in list_files:
+        sample_id = os.path.splitext(os.path.basename(file))[0].split("__")[0]
         with open(file) as f:
             temp = yaml.load(f, Loader=yaml.Loader)
             if temp["status"] == "Success":
-                d[temp["sample"]["name"]] = [
+                d[sample_id] = [
                     temp["summary"]["GC"], temp["summary"]["N50"],
                     temp["summary"]["bin_contigs_at_1x"],
                     temp["summary"]["bin_contigs_at_10x"],
@@ -292,3 +316,163 @@ def parse_assemblatron(list_files):
         "Average coverage (1x)", "Genome size at 1x depth",
         "Genome size at 10x depth", "Genome size at 25x depth", "Ambiguous sites"])
     return df
+
+
+
+
+
+
+
+
+# ------------------------------------
+# PARSERS FOR MINION RESULTS
+# ------------------------------------
+
+
+def load_or_na(list_files):
+    """
+    Load multiple TSV data files or return a DataFrame filled with "NA"
+    if files are empty or unreadable. Adds a SampleID column based on the file name.
+
+    Parameters
+    ----------
+    list_files : list
+        List of file paths to TSV files.
+
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated DataFrame from all readable files.
+    """
+    all_dfs = []
+
+    for file in list_files:
+        
+        try:
+            sample_id = os.path.splitext(os.path.basename(file))[0].split(".")[0]
+            
+            df = pd.read_csv(file, sep="\t")
+        
+            # If file loads but is empty
+            if df.empty:
+                df = pd.DataFrame(columns=df.columns)
+                df.loc[0] = [np.nan] * len(df.columns)
+            
+            df["Sample"] = sample_id
+            
+
+
+        except Exception as e:
+            continue
+
+        all_dfs.append(df)
+
+    combined_df = pd.concat(all_dfs, ignore_index=True)
+    combined_df = combined_df.drop(columns = ["#FILE","COVERAGE","COVERAGE_MAP","GAPS","PRODUCT","RESISTANCE"])
+    combined_df["%COVERAGE"] = combined_df["%COVERAGE"].astype(float) 
+    combined_df["%IDENTITY"] = combined_df["%IDENTITY"].astype(float) 
+    combined_df = combined_df.set_index("Sample")
+    
+    return combined_df
+
+
+
+def parse_nanostat(filename):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+
+    data = {}
+    section = None
+    
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        if line.startswith("General summary:"):
+            section = "general"
+            continue
+        elif line.startswith("Number, percentage and megabases of reads above quality cutoffs"):
+            section = "cutoffs"
+            continue
+        elif line.startswith("Top 5 highest mean basecall") or line.startswith("Top 5 longest reads"):
+            break
+
+        if section == "general" and ':' in line:
+            key, value = map(str.strip, line.split(':', 1))
+            value = value.replace(',', '')
+            try:
+                data[key] = float(value)
+            except ValueError:
+                data[key] = value
+
+        elif section == "cutoffs" and line.startswith('>Q'):
+            parts = re.split(r'\t+', line)
+            
+            if len(parts) >= 2:
+                data[parts[0]] = parts[1]
+                # q_match = re.match(r'>Q(\d+)', parts[0])
+                # #print(q_match)
+                # reads = parts[1].replace(',', '')
+                # #print(reads)
+                # mb_match = re.search(r'([\d.]+)\s*Mb', line)
+                # #print(mb_match)
+
+                # if q_match and reads.isdigit() and mb_match:
+                #     qval = q_match.group(1)
+                #     data[f'>Q{qval} reads'] = int(reads)
+                #     data[f'>Q{qval} Mb'] = float(mb_match.group(1))
+                #     print(data)
+
+    if not data:
+        raise ValueError(f"No valid data found in file: {filename}")
+
+    df = pd.DataFrame([data])
+    
+    return df
+
+
+def parse_fallback_summary(filename):
+    # Read TSV ignoring the first line
+    d = {"number_of_reads":"Number of reads", 
+         "number_of_bases": "Total bases",
+         "median_read_length": "Median read length" ,
+         "mean_read_length": "Mean read length",
+         "read_length_stdev" : "STDEV read length",
+         "n50":"Read length N50",
+         "mean_qual": "Mean read quality",
+         "median_qual": "Median read quality",
+         "Reads >Q5:" : ">Q5:",
+         "Reads >Q7:" : ">Q7:",
+         "Reads >Q10:" : ">Q10:",
+         "Reads >Q12:" : ">Q12:",
+         "Reads >Q15:" : ">Q15:"}
+    
+    df = pd.read_csv(filename, sep='\t', skiprows=1, header=None,index_col=0)
+    
+    df_transformed = df.T.rename(columns=d)
+    
+    return (df_transformed)
+
+
+def parse_nanoplot_summary(list_files):
+    all_dfs = []
+    index = []
+    for file in list_files:
+        sample_id = os.path.splitext(os.path.basename(file))[0].split(".")[0].rstrip("_NanoStats")
+        index.append(sample_id)
+        try:
+            df = parse_nanostat(file)
+           
+        except Exception as e:
+            print(f"parse_nanostat failed for '{file}': {e}")
+            print(f"Attempting fallback parse as TSV: {file}")
+            df = parse_fallback_summary(file)
+           
+        all_dfs.append(df)
+    
+    combined_df = pd.concat(all_dfs)
+    combined_df.index = index
+    combined_df = combined_df.dropna(axis='columns')
+    return combined_df
