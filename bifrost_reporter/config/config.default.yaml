@@ -10,10 +10,12 @@ project:
 Illumina:
     new:  "/dpssi/data/Projects/rar_research/proj/Shared_projects/ms_WP9_benchmark/Illumina_output/sample_sheet.xlsx"
     original:  "/dpssi/data/Projects/rar_research/proj/Shared_projects/ms_WP9_benchmark/Illumina_original/sample_sheet.xlsx"
+    output: "/dpssi/home/scrsim/bifrost_reporter/illumina"
 
 Nanopore:
     new:  "/dpssi/data/Projects/rar_research/proj/Shared_projects/ms_WP9_benchmark/ONT_output/samples.tsv"
     original:  "/dpssi/data/Projects/rar_research/proj/Shared_projects/ms_WP9_benchmark/ONT_original/samples.tsv"
+    output: "/dpssi/home/scrsim/bifrost_reporter/nanopore"
 
 hinf_mgk:
     path: "/dpssi/data/Projects/rar_research/proj/Shared_projects/ms_WP9_benchmark/KMA_benchmarking_HINF_MGK_results.xlsx"

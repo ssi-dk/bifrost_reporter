@@ -7,10 +7,11 @@ import logging
 import yaml
 import pandas as pd
 import seaborn as sns
+import os
 import matplotlib.pyplot as plt
-# pd.set_option('display.max_rows', 1000)  # Show more rows when displaying DataFrames
-# pd.set_option('display.max_colwidth', None)  # Don't truncate column contents
-
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
+import shutil
 
 
 def setup_logging(log_file):
@@ -64,47 +65,151 @@ if __name__ == '__main__':
 
     # Load Thor Analysis
     HINF_df = pd.read_excel(config["hinf_mgk"]["path"], sheet_name = "HINF")
-    MGK_df = pd.read_excel(config["hinf_mgk"]["path"],sheet_name="MGK")
+    MGK_df = pd.read_excel(config["hinf_mgk"]["path"], sheet_name="MGK")
+    out_path1 = os.path.join(config["Nanopore"]["output"] ,"HINF_thor.tsv")
+    out_path2 = os.path.join(config["Nanopore"]["output"] ,"MGK_thor.tsv")
+    
+
+
 
     try:
         print("ILLUMINA")
         print("-----------------------------------------------------")
         # Retrieve sample paths from config
-        # new_illumina_paths = retrieve_samples(config["Illumina"]["new"])
+        new_illumina_paths = retrieve_samples(config["Illumina"]["new"])
         original_illumina_paths = retrieve_samples(config["Illumina"]["original"])
         
         # # Check for expected files in sample directories
-        # new_illumina = check_samples(new_illumina_paths,mode="illumina")
+        new_illumina = check_samples(new_illumina_paths,mode="illumina")
         original_data = check_samples(original_illumina_paths,mode="illumina") 
 
         # # Collect parsed data
-        #l_new = data_collection_from_dict(new_illumina,mode="illumina")
-        l_og = data_collection_from_dict(original_data,mode="illumina")
-        print(l_og)
-
-        
-        print("NANOPORE")
-        print("-----------------------------------------------------")
-        #new_nanopore_paths = retrieve_samples(config["Nanopore"]["new"])
-        #print(new_nanopore_paths)
-        # new_nanopore = check_samples(new_nanopore_paths,mode="nanopore")
-        #print(new_nanopore)
-        # l_new = data_collection_from_dict(new_nanopore,mode="nanopore")
-        
-        # ori_nanopore_paths = retrieve_samples(config["Nanopore"]["original"])
-        
-        # ori_nanopore = check_samples(ori_nanopore_paths,mode="nanopore")
-        # l_ori = data_collection_from_dict(ori_nanopore,mode="nanopore")
-        # print(l_ori)
-
+        l_new_illumina = data_collection_from_dict(new_illumina,mode="illumina")
+        l_og_illumina = data_collection_from_dict(original_data,mode="illumina")
+        #print(l_new)
     except Exception as e:
         logging.error(f"Failed to retrieve or check Illumina sample data: {str(e)}")
         #raise SystemExit(f"Error loading sample paths or data collection failed: {e}")
 
+    try:    
+        print("NEW NANOPORE")
+        print("-----------------------------------------------------")
+        new_nanopore_paths = retrieve_samples(config["Nanopore"]["new"])
+        new_nanopore = check_samples(new_nanopore_paths,mode="nanopore")
+        l_new_nanopore = data_collection_from_dict(new_nanopore,mode="nanopore")
+
+        print("ORIGINAL NANOPORE")
+        print("-----------------------------------------------------")
+        og_nanopore_paths = retrieve_samples(config["Nanopore"]["original"])
+        og_nanopore = check_samples(og_nanopore_paths,mode="nanopore")
+        l_og_nanopore = data_collection_from_dict(og_nanopore,mode="nanopore")
+
+
+    except Exception as e:
+        logging.error(f"Failed to retrieve or check Nanopore sample data: {str(e)}")
+
+
+    # Organize new results by prefix
+    l_dict_dfs = []
+    for df in l_new_nanopore:
+        try:
+            df["Prefix"] = df.index.to_series().apply(extract_prefix)
+            dict_dfs = {prefix: sub_df.drop(columns=["Prefix"]) for prefix, sub_df in df.groupby("Prefix")}
+            l_dict_dfs.append(dict_dfs)
+        except:
+            continue
+    
+    
+    nanostat_dict = {key: pd.concat([df, l_og_nanopore[0]]) for key, df in l_dict_dfs[0].items()}
+    out_path = os.path.join(config["Nanopore"]["output"] ,"nanostat")
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path)
+
+    for sample in nanostat_dict:
+        out_name = sample + "_NanoStat.tsv"
+        nanostat_dict[sample].to_csv(os.path.join(out_path, out_name), sep="\t")
+
+
+    mlst_dict = {key: pd.concat([df, l_og_nanopore[1]]) for key, df in l_dict_dfs[1].items()}
+    out_path = os.path.join(config["Nanopore"]["output"] ,"mlst")
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path)
+
+    for sample in mlst_dict:
+        out_name = sample + "_mlst.tsv"
+        mlst_dict[sample].to_csv(os.path.join(out_path, out_name), sep="\t")
+
+    plasmid_dict = {key: pd.concat([df, l_og_nanopore[2]]) for key, df in l_dict_dfs[2].items()}
+    out_path = os.path.join(config["Nanopore"]["output"] ,"plasmidfinder")
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path)
+
+    for sample in plasmid_dict:
+        out_name = sample + "_plasmidfinder.tsv"
+        plasmid_dict[sample].to_csv(os.path.join(out_path, out_name), sep="\t")
+
+
+    resfinder_dict = {key: pd.concat([df, l_og_nanopore[3]]) for key, df in l_dict_dfs[3].items()}
+    out_path = os.path.join(config["Nanopore"]["output"] ,"resfinder")
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path)
+
+    for sample in resfinder_dict:
+        out_name = sample + "_resfinder.tsv"
+        resfinder_dict[sample].to_csv(os.path.join(out_path, out_name), sep="\t")
+
+
+    virulence_dict = {key: pd.concat([df, l_og_nanopore[4]]) for key, df in l_dict_dfs[4].items()}
+    out_path = os.path.join(config["Nanopore"]["output"] ,"virulencefinder")
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path)
+
+    for sample in virulence_dict:
+        out_name = sample + "_virulencefinder.tsv"
+        virulence_dict[sample].to_csv(os.path.join(out_path, out_name), sep="\t")
+
+    lre_finder_dict = {key: pd.concat([df, l_og_nanopore[5]]) for key, df in l_dict_dfs[5].items()}
+    out_path = os.path.join(config["Nanopore"]["output"] ,"lrefinder")
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path)
+
+    for sample in lre_finder_dict:
+        out_name = sample + "_lrefinder.tsv"
+        lre_finder_dict[sample].to_csv(os.path.join(out_path, out_name), sep="\t")
+    
+    
+    serotype_finder_dict = {key: pd.concat([df, l_og_nanopore[6]]) for key, df in l_dict_dfs[6].items()}
+    out_path = os.path.join(config["Nanopore"]["output"] ,"serotypefinder")
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path)
+
+    for sample in serotype_finder_dict:
+        out_name = sample + "_serotypefinder.tsv"
+        serotype_finder_dict[sample].to_csv(os.path.join(out_path, out_name), sep="\t")
+    
+    ecoligenes_dict = {key: pd.concat([df, l_og_nanopore[7]]) for key, df in l_dict_dfs[7].items()}
+    out_path = os.path.join(config["Nanopore"]["output"] ,"ecoligenes")
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path)
+
+    for sample in ecoligenes_dict:
+        out_name = sample + "_ecoligenes.tsv"
+        ecoligenes_dict[sample].to_csv(os.path.join(out_path, out_name), sep="\t")
+
+    HINF_df.to_csv(out_path1,sep="\t")
+    MGK_df.to_csv(out_path2,sep="\t")
 
     # # Organize new results by prefix
     # l_dict_dfs = []
-    # for df in l_new:
+    # for df in l_new_illumina:
     #     try:
     #         df["Prefix"] = df.index.to_series().apply(extract_prefix)
     #         dict_dfs = {prefix: sub_df.drop(columns=["Prefix"]) for prefix, sub_df in df.groupby("Prefix")}
@@ -112,21 +217,108 @@ if __name__ == '__main__':
     #     except:
     #         continue
 
+
+
+
+
     # # Merge new and original results by prefix
-    # mlst_dict = {key: pd.concat([df, l_og[0]]) for key, df in l_dict_dfs[0].items()}
+    # mlst_dict = {key: pd.concat([df, l_og_illumina[0]]) for key, df in l_dict_dfs[0].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"mlst")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
 
-    # plasmid_finder = {key: pd.concat([df, l_og[1]]) for key, df in l_dict_dfs[1].items()}
-    
-    # resfinder = {key: pd.concat([df, l_og[2]]) for key, df in l_dict_dfs[2].items()}
-    
-    # virulence_finder = {key: pd.concat([df, l_og[3]]) for key, df in l_dict_dfs[3].items()}
- 
-    # assemblatron = {key: pd.concat([df, l_og[4]]) for key, df in l_dict_dfs[4].items()}
-    # print(assemblatron)
-    # kma = {key: pd.concat([df, l_og[5]]) for key, df in l_dict_dfs[5].items()}
+    # for sample in mlst_dict:
+    #     out_name = sample + "_mlst.tsv"
+    #     mlst_dict[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
+        
 
-    # amr_plus = {key: pd.concat([df, l_og[6]]) for key, df in l_dict_dfs[6].items()}
+    # plasmid_finder = {key: pd.concat([df, l_og_illumina[1]]) for key, df in l_dict_dfs[1].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"plasmidfinder")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
 
-    # ssi_stamper = {key: pd.concat([df, l_og[7]]) for key, df in l_dict_dfs[7].items()}
+    # for sample in plasmid_finder:
+    #     out_name = sample + "_plasmidfinder.tsv"
+    #     plasmid_finder[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
 
-    # res_lab_stamper = {key: pd.concat([df, l_og[8]]) for key, df in l_dict_dfs[8].items()}
+    # resfinder_df = {key: pd.concat([df, l_og_illumina[2]]) for key, df in l_dict_dfs[2].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"resfinder")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
+
+    # for sample in resfinder_df:
+    #     out_name = sample + "_resfinder.tsv"
+    #     resfinder_df[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
+
+    # virulence_finder = {key: pd.concat([df, l_og_illumina[3]]) for key, df in l_dict_dfs[3].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"virulencefinder")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
+
+    # for sample in virulence_finder:
+    #     out_name = sample + "_virulencefinder.tsv"
+    #     virulence_finder[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
+
+    # assemblatron = {key: pd.concat([df, l_og_illumina[4]]) for key, df in l_dict_dfs[4].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"assemblatron")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
+
+    # for sample in assemblatron:
+    #     out_name = sample + "_assemblatron.tsv"
+    #     assemblatron[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
+
+    # kma = {key: pd.concat([df, l_og_illumina[5]]) for key, df in l_dict_dfs[5].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"kma")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
+
+    # for sample in kma:
+    #     out_name = sample + "_kma.tsv"
+    #     kma[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
+
+    # amr_plus = {key: pd.concat([df, l_og_illumina[6]]) for key, df in l_dict_dfs[6].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"amrfinder_plus")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
+
+    # for sample in amr_plus:
+    #     out_name = sample + "_amrfinder.tsv"
+    #     amr_plus[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
+
+    # ssi_stamper = {key: pd.concat([df, l_og_illumina[7]]) for key, df in l_dict_dfs[7].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"ssi_stamper")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
+
+    # for sample in ssi_stamper:
+    #     out_name = sample + "_ssi_stamper.tsv"
+    #     ssi_stamper[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
+
+    # reslab_stamper = {key: pd.concat([df, l_og_illumina[8]]) for key, df in l_dict_dfs[8].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"reslab_stamper")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
+
+    # for sample in reslab_stamper:
+    #     out_name = sample + "_reslab_stamper.tsv"
+    #     reslab_stamper[sample].to_csv(os.path.join(out_path,out_name), sep="\t")
+
+    # ecoli_df = {key: pd.concat([df, l_og_illumina[9]]) for key, df in l_dict_dfs[9].items()}
+    # out_path = os.path.join(config["Illumina"]["output"] ,"ecoli_stamper")
+    # if os.path.exists(out_path):
+    #     shutil.rmtree(out_path)
+    # os.makedirs(out_path)
+
+    # for sample in ecoli_df:
+    #     out_name = sample + "_ecoli_stamper.tsv"
+    #     ecoli_df[sample].to_csv(os.path.join(out_path,out_name), sep="\t")

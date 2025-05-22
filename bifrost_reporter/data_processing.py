@@ -11,8 +11,7 @@ import warnings
 import os
 import envyaml
 import re
-pd.options.display.max_columns = None
-pd.options.display.max_rows = None
+
 # This script includes helper functions to parse and normalize various YAML outputs
 # from a bioinformatics pipeline such as Bifrost. These include:
 # - MLST (Multi-Locus Sequence Typing)
@@ -368,9 +367,6 @@ def load_or_na(list_files):
         all_dfs.append(df)
 
     combined_df = pd.concat(all_dfs, ignore_index=True)
-    combined_df = combined_df.drop(columns = ["#FILE","COVERAGE","COVERAGE_MAP","GAPS","PRODUCT","RESISTANCE"])
-    combined_df["%COVERAGE"] = combined_df["%COVERAGE"].astype(float) 
-    combined_df["%IDENTITY"] = combined_df["%IDENTITY"].astype(float) 
     combined_df = combined_df.set_index("Sample")
     
     return combined_df
@@ -412,18 +408,6 @@ def parse_nanostat(filename):
             
             if len(parts) >= 2:
                 data[parts[0]] = parts[1]
-                # q_match = re.match(r'>Q(\d+)', parts[0])
-                # #print(q_match)
-                # reads = parts[1].replace(',', '')
-                # #print(reads)
-                # mb_match = re.search(r'([\d.]+)\s*Mb', line)
-                # #print(mb_match)
-
-                # if q_match and reads.isdigit() and mb_match:
-                #     qval = q_match.group(1)
-                #     data[f'>Q{qval} reads'] = int(reads)
-                #     data[f'>Q{qval} Mb'] = float(mb_match.group(1))
-                #     print(data)
 
     if not data:
         raise ValueError(f"No valid data found in file: {filename}")
@@ -447,12 +431,13 @@ def parse_fallback_summary(filename):
          "Reads >Q7:" : ">Q7:",
          "Reads >Q10:" : ">Q10:",
          "Reads >Q12:" : ">Q12:",
-         "Reads >Q15:" : ">Q15:"}
+         "Reads >Q15:" : ">Q15:",
+         "active_channels": "Active channels"}
     
     df = pd.read_csv(filename, sep='\t', skiprows=1, header=None,index_col=0)
+   
     
     df_transformed = df.T.rename(columns=d)
-    
     return (df_transformed)
 
 
@@ -464,15 +449,55 @@ def parse_nanoplot_summary(list_files):
         index.append(sample_id)
         try:
             df = parse_nanostat(file)
+            
            
         except Exception as e:
             print(f"parse_nanostat failed for '{file}': {e}")
             print(f"Attempting fallback parse as TSV: {file}")
             df = parse_fallback_summary(file)
+            
+            
            
         all_dfs.append(df)
     
     combined_df = pd.concat(all_dfs)
     combined_df.index = index
-    combined_df = combined_df.dropna(axis='columns')
+    combined_df = combined_df.drop(columns=["Active channels",
+                                            "longest_read_(with_Q):1",
+                                            "longest_read_(with_Q):2",
+                                            "longest_read_(with_Q):3",
+                                            "longest_read_(with_Q):4",
+                                            "longest_read_(with_Q):5",
+                                            "highest_Q_read_(with_length):1",
+                                            "highest_Q_read_(with_length):2",
+                                            "highest_Q_read_(with_length):3",
+                                            "highest_Q_read_(with_length):4",
+                                            "highest_Q_read_(with_length):5"])
+    
     return combined_df
+
+
+def parse_mlst_nanopore(list_files):
+    all_dfs = []
+
+    for file in list_files: 
+        sample_id = os.path.splitext(os.path.basename(file))[0].split(".")[0].rstrip("_mlst")
+        
+        try:
+            df = pd.read_csv(file, sep='\t',header=None)
+            
+            all_dfs.append(df)
+            if df.empty:
+                df = pd.DataFrame(columns=df.columns)
+                df.loc[0] = [np.nan] * len(df.columns)
+        
+        except:
+            continue
+        df["Sample"] = sample_id
+    combined_df = pd.concat(all_dfs)
+    combined_df = combined_df.drop(combined_df.columns[0], axis=1)
+    combined_df = combined_df.set_index("Sample")
+   
+    return combined_df
+
+

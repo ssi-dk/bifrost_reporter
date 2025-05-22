@@ -76,8 +76,13 @@ def check_samples(folder_paths,
 
     nanopore_files = ["_NanoStats.txt",
                       ".unicycler_nponly_resfinder.tsv",
-                      ".unicycler_nponly_plasmidfinder.tsv"
-    ]
+                      ".unicycler_nponly_plasmidfinder.tsv",
+                      ".unicycler_nponly_virulencefinder.tsv",
+                      ".unicycler_nponly_lrefinder.tsv",
+                      ".unicycler_nponly_serotypefinder.tsv",
+                      ".unicycler_nponly_ecoligenes.tsv",
+                      "_mlst.tsv"
+    ]                 
 
     expected_files = illumina_files if mode == 'illumina' else nanopore_files
 
@@ -128,13 +133,14 @@ def data_collection_from_dict(sample_dict,
             if is_present:
                 try:
                     if mode == "illumina":
-                        analysis_name = file_name.strip(".yaml").split("__")[1]
+                        analysis_name = file_name.removesuffix(".yaml").split("__")[1]
                         
                     elif mode == "nanopore" and file_name.endswith(".txt"):
-                        analysis_name = file_name.strip(".txt").split("_")[-1]
+                        analysis_name = file_name.removesuffix(".txt").split("_")[-1]
                         
                     elif mode == "nanopore" and file_name.endswith(".tsv"):
-                        analysis_name = file_name.strip(".tsv").split("_")[-1]
+                        analysis_name = file_name.removesuffix(".tsv").split("_")[-1]
+                        
 
                     analysis_files.setdefault(analysis_name, []).append(os.path.join(sample_path, file_name))
                 except:
@@ -154,6 +160,9 @@ def data_collection_from_dict(sample_dict,
             # Parse PlasmidFinder
             print("[INFO] Parsing PlasmidFinder...")
             plasmid_finder_df = data_processing.parse_finder_tools(analysis_files.get("ariba_plasmidfinder", []), "ariba_plasmidfinder")
+            #plasmid_finder_df = plasmid_finder_df.drop(columns = ["#FILE","COVERAGE","COVERAGE_MAP","GAPS","PRODUCT","RESISTANCE"])
+            plasmid_finder_df["%COVERAGE"] = plasmid_finder_df["%COVERAGE"].astype(float) 
+            plasmid_finder_df["%IDENTITY"] = plasmid_finder_df["%IDENTITY"].astype(float) 
             plasmid_finder_df = plasmid_finder_df[(plasmid_finder_df["%COVERAGE"] >= 80) & (plasmid_finder_df["%IDENTITY"] >= 80)]
         except Exception as e:
             print(f"[ERROR] Failed to parse PlasmidFinder: {e}")
@@ -163,6 +172,9 @@ def data_collection_from_dict(sample_dict,
             # Parse ResFinder
             print("[INFO] Parsing ResFinder...")
             resfinder_df = data_processing.parse_finder_tools(analysis_files.get("ariba_resfinder", []), "ariba_resfinder")
+            #resfinder_df = resfinder_df.drop(columns = ["#FILE","COVERAGE","COVERAGE_MAP","GAPS","PRODUCT","RESISTANCE"])
+            resfinder_df["%COVERAGE"] = resfinder_df["%COVERAGE"].astype(float) 
+            resfinder_df["%IDENTITY"] = resfinder_df["%IDENTITY"].astype(float) 
             resfinder_df = resfinder_df[(resfinder_df["%COVERAGE"] >= 60) & (resfinder_df["%IDENTITY"] >= 90)]
         except Exception as e:
             print(f"[ERROR] Failed to parse ResFinder: {e}")
@@ -242,12 +254,17 @@ def data_collection_from_dict(sample_dict,
         plasmid_finder_df = pd.DataFrame()
         resfinder_df = pd.DataFrame()
         nanostat = pd.DataFrame()
+        mlst = pd.DataFrame()
 
         try:
             # Parse PlasmidFinder for Nanopore
             print("[INFO] Parsing PlasmidFinder...")
             plasmid_finder_df = data_processing.load_or_na(analysis_files.get("plasmidfinder", []))
+            #plasmid_finder_df = plasmid_finder_df.drop(columns = ["#FILE","COVERAGE","COVERAGE_MAP","GAPS","PRODUCT","RESISTANCE"])
+            plasmid_finder_df["%COVERAGE"] = plasmid_finder_df["%COVERAGE"].astype(float) 
+            plasmid_finder_df["%IDENTITY"] = plasmid_finder_df["%IDENTITY"].astype(float) 
             plasmid_finder_df = plasmid_finder_df[(plasmid_finder_df["%COVERAGE"] >= 80) & (plasmid_finder_df["%IDENTITY"] >= 80)]
+            plasmid_finder_df = plasmid_finder_df.drop(columns=["#FILE"])
         except Exception as e:
             print(f"[WARNING] Failed to parse plasmidfinder: {e}")
 
@@ -255,7 +272,11 @@ def data_collection_from_dict(sample_dict,
             # Parse ResFinder for Nanopore
             print("[INFO] Parsing ResFinder...")
             resfinder_df = data_processing.load_or_na(analysis_files.get("resfinder", []))
+            #resfinder_df = resfinder_df.drop(columns = ["#FILE","COVERAGE","COVERAGE_MAP","GAPS","PRODUCT","RESISTANCE"])
+            resfinder_df["%COVERAGE"] = resfinder_df["%COVERAGE"].astype(float) 
+            resfinder_df["%IDENTITY"] = resfinder_df["%IDENTITY"].astype(float) 
             resfinder_df = resfinder_df[(resfinder_df["%COVERAGE"] >= 60) & (resfinder_df["%IDENTITY"] >= 90)]
+            resfinder_df = resfinder_df.drop(columns=["#FILE"])
         except Exception as e:
             print(f"[WARNING] Failed to parse resfinder: {e}")
 
@@ -266,11 +287,69 @@ def data_collection_from_dict(sample_dict,
         except Exception as e:
             print(f"[WARNING] Failed to parse NanoStats: {e}")
 
+        try:
+            # Parse NanoPlot Summary for Nanopore
+            print("[INFO] Parsing MLST...")
+            mlst = data_processing.parse_mlst_nanopore(analysis_files.get("mlst", []))
+        except Exception as e:
+            print(f"[WARNING] Failed to parse MLST: {e}")
+
+        try:
+            # Parse PlasmidFinder for Nanopore
+            print("[INFO] Parsing LRE-finder...")
+            lre_finder_df = data_processing.load_or_na(analysis_files.get("lrefinder", []))
+            lre_finder_df["Query_Coverage"] = lre_finder_df["Query_Coverage"].astype(float) 
+            lre_finder_df["Query_Identity"] = lre_finder_df["Query_Identity"].astype(float) 
+            lre_finder_df = lre_finder_df[(lre_finder_df["Query_Coverage"] >= 90) & (lre_finder_df["Query_Identity"] >= 95)]
+            
+        except Exception as e:
+            print(f"[WARNING] Failed to parse LRE-finder: {e}")
+
+        try:
+            # Parse VirulenceFinder for Nanopore
+            print("[INFO] Parsing Virulencefinder...")
+            virulence_finder = data_processing.load_or_na(analysis_files.get("virulencefinder", []))
+            virulence_finder["Query_Coverage"] = virulence_finder["Query_Coverage"].astype(float) 
+            virulence_finder["Query_Identity"] = virulence_finder["Query_Identity"].astype(float) 
+            virulence_finder = virulence_finder[(virulence_finder["Query_Coverage"] >= 90) & (virulence_finder["Query_Identity"] >= 95)]
+            virulence_finder["#Template"] = virulence_finder["#Template"].str.replace('virulencefinder_db-',"").str.replace('~~~',':')
+        except Exception as e:
+            print(f"[WARNING] Failed to parse Virulencefinder: {e}")
+
+        try:
+            # Parse VirulenceFinder for Nanopore
+            print("[INFO] Parsing Serotypefinder...")
+            serotype_finder_df = data_processing.load_or_na(analysis_files.get("serotypefinder", []))
+            serotype_finder_df["Query_Coverage"] = serotype_finder_df["Query_Coverage"].astype(float) 
+            serotype_finder_df["Query_Identity"] = serotype_finder_df["Query_Identity"].astype(float) 
+            serotype_finder_df = serotype_finder_df[(serotype_finder_df["Query_Coverage"] >= 90) & (serotype_finder_df["Query_Identity"] >= 95)]
+            serotype_finder_df["#Template"] = (serotype_finder_df["#Template"].str.replace('serotypefinder_db-','').str.split('~~~').str[1].str.replace('_',':') + ":" + 
+                                               serotype_finder_df["#Template"].str.replace('serotypefinder_db-','').str.split('~~~').str[2].str.replace('_',':'))
+        except Exception as e:
+            print(f"[WARNING] Failed to parse Serotypefinder: {e}")
+
+        try:
+            # Parse VirulenceFinder for Nanopore
+            print("[INFO] Parsing Serotypefinder...")
+            ecoligenes_df = data_processing.load_or_na(analysis_files.get("ecoligenes", []))
+            ecoligenes_df["Query_Coverage"] = ecoligenes_df["Query_Coverage"].astype(float) 
+            ecoligenes_df["Query_Identity"] = ecoligenes_df["Query_Identity"].astype(float) 
+            ecoligenes_df = ecoligenes_df[(ecoligenes_df["Query_Coverage"] >= 90) & (ecoligenes_df["Query_Identity"] >= 95)]
+            ecoligenes_df["#Template"] = (ecoligenes_df["#Template"].str.split('__').str[1] + ":" + 
+                                          ecoligenes_df["#Template"].str.split('__').str[2])
+        except Exception as e:
+            print(f"[WARNING] Failed to parse ecoligenes: {e}")
+
         return (
+            nanostat,
+            mlst,
             plasmid_finder_df,
             resfinder_df,
-            nanostat
+            virulence_finder,
+            lre_finder_df,
+            serotype_finder_df,
+            ecoligenes_df
         )
-        # missing other stuff
+
 
 
